@@ -6,10 +6,9 @@ namespace WinLayoutAssistant;
 /// <summary>
 /// Tray app. The form itself is the settings window (hidden to tray on close).
 /// Hotkeys: Ctrl+Alt+L = tile now, Ctrl+Alt+U = unpin all.
-/// v1.1 fixes: tray "退出" really exits (v1.0 bug: Close() was cancelled by
-/// OnFormClosing and only hid to tray, forcing a Task Manager kill);
-/// default layout is now BSP (fills 100%, no empty grid cells);
-/// exe-name blacklist with a one-click "add active window" button.
+/// v1.4 restyle: airy light page (hero button, toggle switches, avatar-chip
+/// exclusion list) following the approved mockup. Behaviour is unchanged:
+/// same hotkeys, tiling, reflow, snap, blacklist and tray logic.
 /// </summary>
 public sealed class MainForm : Form
 {
@@ -25,24 +24,28 @@ public sealed class MainForm : Form
     private readonly HashSet<IntPtr> _pinned = new();
     private readonly DragMonitor _drag;
     private readonly NotifyIcon _tray;
-    private readonly ComboBox _modeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 250, Font = Theme.BodyFont, FlatStyle = FlatStyle.Flat };
-    private readonly NumericUpDown _threshold = new() { Minimum = 8, Maximum = 80, Width = 80, Font = Theme.BodyFont };
-    private readonly CheckBox _startup = new() { Text = "开机自启动", AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card };
-    private readonly CheckBox _topmost = new() { Text = "本窗口始终置顶", AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card };
-    private readonly RoundedButton _autoBtn = new() { Width = 396, Height = 44, ButtonKind = RoundedButton.Kind.Soft };
-    private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background };
+
+    private readonly ComboBox _modeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 216, Font = Theme.BodyFont, FlatStyle = FlatStyle.Flat };
+    private readonly NumericUpDown _threshold = new() { Minimum = 8, Maximum = 80, Width = 72, Font = Theme.BodyFont };
+    private readonly ToggleSwitch _startupSw = new();
+    private readonly ToggleSwitch _topmostSw = new();
+    private readonly RoundedButton _autoBtn = new() { ButtonKind = RoundedButton.Kind.Ghost, Font = Theme.SmallFont };
+    private readonly Label _status = new() { AutoSize = false, Width = 370, Height = 18, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background };
+    private readonly Label _autoStatus = new() { AutoSize = false, Width = 116, Height = 18, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background, TextAlign = ContentAlignment.TopRight };
+    private readonly StatusDot _autoDot = new();
+    private readonly StatusDot _statusDot = new();
     private readonly List<RoundedPanel> _cards = new();
-    private readonly NumericUpDown _marginL = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
-    private readonly NumericUpDown _marginT = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
-    private readonly NumericUpDown _marginR = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
-    private readonly NumericUpDown _marginB = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
-    private readonly ListBox _blacklistBox = new() { Width = 396, Height = 92, Font = Theme.BodyFont, BorderStyle = BorderStyle.None, BackColor = Theme.Well };
-    private readonly TextBox _blacklistInput = new() { Width = 220, Font = Theme.BodyFont, PlaceholderText = "例如: WeChat.exe", BorderStyle = BorderStyle.FixedSingle };
+    private readonly MarginBox _marginL = new("左");
+    private readonly MarginBox _marginT = new("上");
+    private readonly MarginBox _marginR = new("右");
+    private readonly MarginBox _marginB = new("下");
+    private readonly BlacklistView _blacklistView = new();
+    private readonly Label _blacklistCount = new() { AutoSize = false, Width = 80, Height = 16, ForeColor = Theme.TextSecondary, Font = Theme.TinyFont, BackColor = Theme.Card, TextAlign = ContentAlignment.TopRight };
+    private readonly TextBox _blacklistInput = new() { Width = 264, Font = Theme.BodyFont, PlaceholderText = "输入进程名，例如 WeChat.exe", BorderStyle = BorderStyle.FixedSingle };
 
     public MainForm()
     {
         Text = "WinLayoutAssistant";
-        Width = 460; Height = 760;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -53,92 +56,122 @@ public sealed class MainForm : Form
         _modeBox.Items.AddRange(new object[] { "BSP 平铺 · 默认，占满全部空间", "网格平铺 (Grid)", "横向分列 (Columns)", "纵向分行 (Rows)" });
         _modeBox.SelectedIndex = (int)_settings.LayoutMode;
         _threshold.Value = _settings.SnapThreshold;
-        _startup.Checked = _settings.RunAtStartup;
-        _topmost.Checked = _settings.TopMost;
+        // set initial toggle states without firing CheckedChanged -> Save()
+        _startupSw.Checked = _settings.RunAtStartup;
+        _topmostSw.Checked = _settings.TopMost;
         _marginL.Value = _settings.MarginLeft;
         _marginT.Value = _settings.MarginTop;
         _marginR.Value = _settings.MarginRight;
         _marginB.Value = _settings.MarginBottom;
-        TopMost = _settings.TopMost; // v1.2: stay on top while running, switchable below
-        RefreshBlacklistBox();
+        TopMost = _settings.TopMost;
+        RefreshBlacklist();
         UpdateAutoButton();
 
-        // --- header: navy→indigo gradient, icon badge, title, version pill ---
-        var header = new GradientHeader
-        {
-            Top = 0, Left = 0, Width = 460, Height = 96,
-            TitleText = "WinLayoutAssistant",
-            SubText = "桌面布局小助手  ·  拖拽磁吸 1/n  ·  松手自动重排",
-            VersionText = "v1.4"
-        };
-        var accentBar = new Panel { Top = 96, Left = 0, Width = 460, Height = 3, BackColor = Theme.Accent };
+        // --- header: badge + title + version pill, directly on the page ---
+        var badge = new BadgeView { Top = 26, Left = 24 };
+        var title = new Label { Text = "WinLayoutAssistant", Top = 28, Left = 94, AutoSize = true, Font = Theme.TitleFont, ForeColor = Theme.Text, BackColor = Theme.Background };
+        var sub = new Label { Text = "让每一个窗口，都恰到好处。", Top = 60, Left = 94, AutoSize = true, Font = Theme.SmallFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Background };
+        var pill = new PillLabel { Text = "1.4", Top = 32, Left = 408 };
 
-        // --- card 1: actions ---
-        var card1 = new RoundedPanel { Top = 118, Left = 24, Width = 412, Height = 168 };
-        _cards.Add(card1);
-        var tileBtn = new RoundedButton { Text = "一键平铺所有窗口    Ctrl+Alt+L", Width = 380, Height = 48, Top = 16, Left = 16, ButtonKind = RoundedButton.Kind.Primary };
-        tileBtn.Click += (_, _) => TileAll();
-        _autoBtn.Top = 76; _autoBtn.Left = 16;
+        // --- section row: 桌面布局 + auto-layout state ---
+        var section = new Label { Text = "桌面布局", Top = 102, Left = 24, AutoSize = true, Font = Theme.SectionFont, ForeColor = Theme.Text, BackColor = Theme.Background };
+        _autoDot.Top = 107; _autoDot.Left = 326;
+        _autoStatus.Top = 102; _autoStatus.Left = 340;
+
+        // --- hero: one-click tile ---
+        var hero = new RoundedButton
+        {
+            Text = "一键平铺所有窗口",
+            RightText = "Ctrl + Alt + L",
+            IconGlyph = RoundedButton.Glyph.Grid,
+            AlignLeft = true,
+            ButtonKind = RoundedButton.Kind.Primary,
+            Font = Theme.SectionFont,
+            Radius = 14,
+            Top = 128, Left = 24, Width = 432, Height = 56
+        };
+        hero.Click += (_, _) => TileAll();
+
+        // --- three ghost buttons ---
+        _autoBtn.IconGlyph = RoundedButton.Glyph.Play;
+        _autoBtn.Top = 196; _autoBtn.Left = 24; _autoBtn.Width = 136; _autoBtn.Height = 44;
         _autoBtn.Click += (_, _) => ToggleAutoLayout();
-        var pinBtn = new RoundedButton { Text = "固定当前窗口", Width = 184, Height = 36, Top = 132, Left = 16, ButtonKind = RoundedButton.Kind.Ghost };
+        var pinBtn = new RoundedButton { Text = "固定当前窗口", IconGlyph = RoundedButton.Glyph.Pin, ButtonKind = RoundedButton.Kind.Ghost, Font = Theme.SmallFont, Top = 196, Left = 172, Width = 136, Height = 44 };
         pinBtn.Click += (_, _) => PinActiveWindow();
-        var unpinBtn = new RoundedButton { Text = "取消全部固定  Ctrl+Alt+U", Width = 184, Height = 36, Top = 132, Left = 212, ButtonKind = RoundedButton.Kind.Ghost };
+        var unpinBtn = new RoundedButton { Text = "取消全部固定", IconGlyph = RoundedButton.Glyph.Unpin, ButtonKind = RoundedButton.Kind.Ghost, Font = Theme.SmallFont, Top = 196, Left = 320, Width = 136, Height = 44 };
         unpinBtn.Click += (_, _) => UnpinAll();
-        card1.Controls.AddRange(new Control[] { tileBtn, _autoBtn, pinBtn, unpinBtn });
 
-        // --- card 2: layout settings ---
-        var card2 = new RoundedPanel { Top = 302, Left = 24, Width = 412, Height = 176 };
+        // --- card: layout preferences ---
+        var card2 = new RoundedPanel { Top = 252, Left = 24, Width = 432, Height = 304 };
         _cards.Add(card2);
-        card2.Controls.Add(new SectionLabel("平铺方式") { Top = 16, Left = 16 });
-        _modeBox.Top = 40; _modeBox.Left = 16;
-        card2.Controls.Add(new Label { Text = "磁吸距离", Top = 78, Left = 16, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
-        _threshold.Top = 74; _threshold.Left = 100;
-        card2.Controls.Add(new Label { Text = "px", Top = 78, Left = 188, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
-        _startup.Top = 76; _startup.Left = 230;
-        // v1.4: per-edge screen margins excluded from tiling / reflow / snap
-        card2.Controls.Add(new Label { Text = "屏幕边距", Top = 110, Left = 16, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
-        card2.Controls.Add(new Label { Text = "左", Top = 110, Left = 90, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
-        _marginL.Top = 106; _marginL.Left = 110;
-        card2.Controls.Add(new Label { Text = "上", Top = 110, Left = 168, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
-        _marginT.Top = 106; _marginT.Left = 188;
-        card2.Controls.Add(new Label { Text = "右", Top = 110, Left = 246, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
-        _marginR.Top = 106; _marginR.Left = 266;
-        card2.Controls.Add(new Label { Text = "下", Top = 110, Left = 324, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
-        _marginB.Top = 106; _marginB.Left = 344;
-        _topmost.Top = 144; _topmost.Left = 16;
-        card2.Controls.AddRange(new Control[] { _modeBox, _threshold, _startup, _topmost, _marginL, _marginT, _marginR, _marginB });
+        card2.Controls.Add(new Label { Text = "布局偏好", Top = 16, Left = 20, AutoSize = true, Font = Theme.SectionFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        card2.Controls.Add(new Label { Text = "LAYOUT", Top = 23, Left = 352, Width = 60, Font = Theme.TinyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card, TextAlign = ContentAlignment.TopRight });
+        card2.Controls.Add(new Label { Text = "平铺方式", Top = 62, Left = 20, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        _modeBox.Top = 56; _modeBox.Left = 196;
+        card2.Controls.Add(Divider(100));
+        card2.Controls.Add(new Label { Text = "磁吸距离", Top = 116, Left = 20, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        card2.Controls.Add(new Label { Text = "靠近屏幕分线时自动吸附", Top = 136, Left = 20, AutoSize = true, Font = Theme.TinyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _threshold.Top = 112; _threshold.Left = 324;
+        card2.Controls.Add(new Label { Text = "px", Top = 118, Left = 402, AutoSize = true, Font = Theme.SmallFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        card2.Controls.Add(Divider(160));
+        card2.Controls.Add(new Label { Text = "屏幕边距", Top = 176, Left = 20, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        card2.Controls.Add(new Label { Text = "px", Top = 178, Left = 396, AutoSize = true, Font = Theme.SmallFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _marginL.Top = 202; _marginL.Left = 20; _marginL.Width = 90;
+        _marginT.Top = 202; _marginT.Left = 121; _marginT.Width = 90;
+        _marginR.Top = 202; _marginR.Left = 222; _marginR.Width = 90;
+        _marginB.Top = 202; _marginB.Left = 323; _marginB.Width = 90;
+        card2.Controls.Add(Divider(250));
+        card2.Controls.Add(new Label { Text = "开机自动启动", Top = 268, Left = 20, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        _startupSw.Top = 264; _startupSw.Left = 180;
+        card2.Controls.Add(new Label { Text = "保持窗口置顶", Top = 268, Left = 250, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        _topmostSw.Top = 264; _topmostSw.Left = 368;
+        card2.Controls.AddRange(new Control[] { _modeBox, _threshold, _marginL, _marginT, _marginR, _marginB, _startupSw, _topmostSw });
 
-        // --- card 3: blacklist ---
-        var card3 = new RoundedPanel { Top = 494, Left = 24, Width = 412, Height = 196 };
+        // --- card: excluded apps ---
+        var card3 = new RoundedPanel { Top = 576, Left = 24, Width = 432, Height = 344 };
         _cards.Add(card3);
-        card3.Controls.Add(new SectionLabel("黑名单 · 按 exe 名，不参与排布") { Top = 14, Left = 16 });
-        _blacklistBox.Top = 40; _blacklistBox.Left = 16;
-        _blacklistInput.Top = 140; _blacklistInput.Left = 16;
-        var blAddBtn = new RoundedButton { Text = "添加", Width = 72, Height = 28, Top = 138, Left = 244, ButtonKind = RoundedButton.Kind.Soft };
+        card3.Controls.Add(new Label { Text = "排除应用", Top = 16, Left = 20, AutoSize = true, Font = Theme.SectionFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        _blacklistCount.Top = 22; _blacklistCount.Left = 332;
+        _blacklistView.Top = 52; _blacklistView.Left = 12; _blacklistView.Width = 408; _blacklistView.Height = 184;
+        _blacklistInput.Top = 252; _blacklistInput.Left = 20;
+        var blAddBtn = new RoundedButton { Text = "+ 添加", ButtonKind = RoundedButton.Kind.Soft, Top = 248, Left = 316, Width = 96, Height = 34 };
         blAddBtn.Click += (_, _) => AddBlacklist(_blacklistInput.Text);
-        var blDelBtn = new RoundedButton { Text = "删除选中", Width = 84, Height = 28, Top = 138, Left = 324, ButtonKind = RoundedButton.Kind.Ghost };
-        blDelBtn.Click += (_, _) => RemoveSelectedBlacklist();
-        var blActiveBtn = new RoundedButton { Text = "把当前活动窗口加入黑名单", Width = 380, Height = 32, Top = 172, Left = 16, ButtonKind = RoundedButton.Kind.Ghost };
+        var blActiveBtn = new RoundedButton { Text = "+ 将当前活动窗口加入排除列表", ButtonKind = RoundedButton.Kind.Link, Font = Theme.SmallFont, Top = 294, Left = 20, Width = 392, Height = 32 };
         blActiveBtn.Click += (_, _) => AddActiveWindowToBlacklist();
-        card3.Controls.AddRange(new Control[] { _blacklistBox, _blacklistInput, blAddBtn, blDelBtn, blActiveBtn });
+        card3.Controls.AddRange(new Control[] { _blacklistCount, _blacklistView, _blacklistInput, blAddBtn, blActiveBtn });
 
-        // --- footer: status + exit ---
-        var dot = new GlowDot { Top = 706, Left = 24, Width = 12, Height = 12 };
-        _status.Top = 704; _status.Left = 42; _status.Width = 380;
-        var hint = new Label
+        // --- status row + footer band ---
+        _statusDot.Top = 938; _statusDot.Left = 24;
+        _status.Top = 934; _status.Left = 40;
+        var exitLink = new Label
         {
-            Text = "拖动窗口靠近 1/2、1/3 … 1/9 的线会磁吸，松手后该窗口固定，其余窗口在剩余空间重排。\r\n点 × 最小化到托盘；托盘右键 → 退出 才是真正退出。一键平铺按窗口左上角从左到右、从上到下排序。",
-            Top = 728, Left = 24, Width = 412, Height = 36, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background
+            Text = "退出程序", Top = 934, Left = 418, AutoSize = true,
+            Font = Theme.SmallFont, ForeColor = Theme.TextSecondary,
+            BackColor = Theme.Background, Cursor = Cursors.Hand
         };
-        var exitBtn = new RoundedButton { Text = "退出程序", Width = 412, Height = 36, Top = 768, Left = 24, ButtonKind = RoundedButton.Kind.DangerSoft };
-        exitBtn.Click += (_, _) => ExitApp();
-        Controls.AddRange(new Control[] { header, accentBar, card1, card2, card3, dot, _status, hint, exitBtn });
-        ClientSize = new Size(460, 816);
+        exitLink.Click += (_, _) => ExitApp();
+        var band = new Panel { Top = 964, Left = 0, Width = 480, Height = 46, BackColor = Theme.Well };
+        band.Controls.Add(new Label
+        {
+            Text = "拖动即整理　靠近 ½、⅓ 或 ⅙ 分线即可磁吸，松手固定窗口，其余窗口自动重排。",
+            Top = 16, Left = 0, Width = 480, Height = 16,
+            Font = Theme.SmallFont, ForeColor = Theme.TextSecondary,
+            BackColor = Theme.Well, TextAlign = ContentAlignment.TopCenter
+        });
+
+        Controls.AddRange(new Control[]
+        {
+            badge, title, sub, pill, section, _autoDot, _autoStatus,
+            hero, _autoBtn, pinBtn, unpinBtn,
+            card2, card3, _statusDot, _status, exitLink, band
+        });
+        ClientSize = new Size(480, 1010);
+        ActiveControl = null; // no focus rectangle on the link button at startup
 
         _modeBox.SelectedIndexChanged += (_, _) => { _settings.LayoutMode = (TileEngine.Mode)_modeBox.SelectedIndex; _settings.Save(); };
         _threshold.ValueChanged += (_, _) => { _settings.SnapThreshold = (int)_threshold.Value; _settings.Save(); };
-        _startup.CheckedChanged += (_, _) => { _settings.RunAtStartup = _startup.Checked; _settings.Save(); ApplyStartup(); };
-        _topmost.CheckedChanged += (_, _) => { _settings.TopMost = _topmost.Checked; TopMost = _topmost.Checked; _settings.Save(); };
+        _startupSw.CheckedChanged += (_, _) => { _settings.RunAtStartup = _startupSw.Checked; _settings.Save(); ApplyStartup(); };
+        _topmostSw.CheckedChanged += (_, _) => { _settings.TopMost = _topmostSw.Checked; TopMost = _topmostSw.Checked; _settings.Save(); };
         _marginL.ValueChanged += (_, _) => { _settings.MarginLeft = (int)_marginL.Value; _settings.Save(); };
         _marginT.ValueChanged += (_, _) => { _settings.MarginTop = (int)_marginT.Value; _settings.Save(); };
         _marginR.ValueChanged += (_, _) => { _settings.MarginRight = (int)_marginR.Value; _settings.Save(); };
@@ -168,8 +201,12 @@ public sealed class MainForm : Form
         RegisterHotKey(Handle, 1, MOD_CONTROL | MOD_ALT, (uint)Keys.L);
         RegisterHotKey(Handle, 2, MOD_CONTROL | MOD_ALT, (uint)Keys.U);
         RegisterHotKey(Handle, 3, MOD_CONTROL | MOD_ALT, (uint)Keys.P);
-        UpdateStatus("就绪：已监听窗口拖拽，磁吸 1/n 开启。");
+        UpdateStatus("已就绪，正在监听窗口拖拽");
     }
+
+    /// <summary>1px hairline divider used inside cards.</summary>
+    private static Panel Divider(int top) =>
+        new() { Top = top, Left = 20, Width = 392, Height = 1, BackColor = Theme.Divider };
 
     private void ExitApp()
     {
@@ -193,15 +230,18 @@ public sealed class MainForm : Form
         _drag.Enabled = _settings.AutoLayoutEnabled;
         UpdateAutoButton();
         UpdateStatus(_settings.AutoLayoutEnabled
-            ? "自动布局已开启：拖动会磁吸，松手后其余窗口重排。"
-            : "自动布局已停止：程序仍在托盘运行，拖动不再磁吸/重排；手动一键平铺仍可用。");
+            ? "自动布局已开启：拖动会磁吸，松手后其余窗口重排"
+            : "自动布局已停止：拖动不再磁吸/重排，手动平铺仍可用");
     }
 
     private void UpdateAutoButton()
     {
-        _autoBtn.Text = _settings.AutoLayoutEnabled ? "●  自动布局运行中，点击停止  (Ctrl+Alt+P)" : "○  自动布局已停止，点击开始  (Ctrl+Alt+P)";
-        _autoBtn.ButtonKind = _settings.AutoLayoutEnabled ? RoundedButton.Kind.Soft : RoundedButton.Kind.Ghost;
+        bool on = _settings.AutoLayoutEnabled;
+        _autoBtn.Text = on ? "停止自动布局" : "开启自动布局";
+        _autoBtn.IconGlyph = on ? RoundedButton.Glyph.Pause : RoundedButton.Glyph.Play;
         _autoBtn.Invalidate();
+        _autoStatus.Text = on ? "自动布局运行中" : "自动布局已暂停";
+        _autoDot.DotColor = on ? Theme.Green : Theme.Amber;
     }
 
     /// <summary>
@@ -243,10 +283,10 @@ public sealed class MainForm : Form
         return m;
     }
 
-    private void RefreshBlacklistBox()
+    private void RefreshBlacklist()
     {
-        _blacklistBox.Items.Clear();
-        foreach (var b in _settings.BlacklistExeNames) _blacklistBox.Items.Add(b);
+        _blacklistView.SetItems(_settings.BlacklistExeNames);
+        _blacklistCount.Text = $"{_settings.BlacklistExeNames.Count} 个应用";
     }
 
     private void AddBlacklist(string name)
@@ -257,18 +297,17 @@ public sealed class MainForm : Form
         if (_settings.BlacklistExeNames.Any(b => b.Equals(name, StringComparison.OrdinalIgnoreCase))) return;
         _settings.BlacklistExeNames.Add(name);
         _settings.Save();
-        RefreshBlacklistBox();
+        RefreshBlacklist();
         _blacklistInput.Clear();
-        UpdateStatus($"已加入黑名单：{name}，下次平铺不再排布它。");
+        UpdateStatus($"已加入黑名单：{name}，下次平铺不再排布它");
     }
 
-    private void RemoveSelectedBlacklist()
+    private void RemoveBlacklist(string name)
     {
-        if (_blacklistBox.SelectedItem is not string sel) return;
-        _settings.BlacklistExeNames.RemoveAll(b => b.Equals(sel, StringComparison.OrdinalIgnoreCase));
+        _settings.BlacklistExeNames.RemoveAll(b => b.Equals(name, StringComparison.OrdinalIgnoreCase));
         _settings.Save();
-        RefreshBlacklistBox();
-        UpdateStatus($"已从黑名单移除：{sel}");
+        RefreshBlacklist();
+        UpdateStatus($"已从黑名单移除：{name}");
     }
 
     private void AddActiveWindowToBlacklist()
@@ -276,13 +315,13 @@ public sealed class MainForm : Form
         var fg = GetForegroundWindow();
         if (fg == IntPtr.Zero || fg == Handle)
         {
-            UpdateStatus("先点一下要拉黑的窗口，让它成为活动窗口，再点这个按钮。");
+            UpdateStatus("先点一下要拉黑的窗口，让它成为活动窗口，再点这个按钮");
             return;
         }
         string exe = WindowHelper.GetExeName(fg);
         if (string.IsNullOrEmpty(exe))
         {
-            UpdateStatus($"取不到活动窗口的 exe 名（标题：{WindowHelper.GetTitle(fg)}），请手动输入 exe 名。");
+            UpdateStatus($"取不到活动窗口的 exe 名（标题：{WindowHelper.GetTitle(fg)}），请手动输入 exe 名");
             return;
         }
         AddBlacklist(exe);
@@ -307,7 +346,7 @@ public sealed class MainForm : Form
     {
         _pinned.Clear();
         var wins = WindowHelper.GetTileableWindows(Handle, _settings);
-        if (wins.Count == 0) { UpdateStatus("没有可平铺的窗口（可能都被黑名单排除了）。"); return; }
+        if (wins.Count == 0) { UpdateStatus("没有可平铺的窗口（可能都被黑名单排除了）"); return; }
         var ordered = SortByTopLeft(wins);
         foreach (var group in ordered.GroupBy(w => _settings.ApplyMargins(WindowHelper.GetWorkArea(w))))
         {
@@ -315,13 +354,13 @@ public sealed class MainForm : Form
             int i = 0;
             foreach (var w in group) WindowHelper.MoveWindowTo(w, rects[i++]);
         }
-        UpdateStatus($"已平铺 {wins.Count} 个窗口（{_settings.LayoutMode}，已占满，按左上角从左到右、从上到下）。");
+        UpdateStatus($"已平铺 {wins.Count} 个窗口（{_settings.LayoutMode}，按左上角从左到右、从上到下）");
     }
 
     private void PinActiveWindow()
     {
         var fg = GetForegroundWindow();
-        if (fg == IntPtr.Zero || fg == Handle) { UpdateStatus("没有可固定的活动窗口。"); return; }
+        if (fg == IntPtr.Zero || fg == Handle) { UpdateStatus("没有可固定的活动窗口"); return; }
         _pinned.Add(fg);
         UpdateStatus($"已固定：{WindowHelper.GetTitle(fg)}（共 {_pinned.Count} 个固定窗口）");
     }
@@ -329,7 +368,7 @@ public sealed class MainForm : Form
     private void UnpinAll()
     {
         _pinned.Clear();
-        UpdateStatus("已取消全部固定。下一次平铺将重新排列所有窗口。");
+        UpdateStatus("已取消全部固定。下一次平铺将重新排列所有窗口");
     }
 
     /// <summary>
@@ -342,7 +381,7 @@ public sealed class MainForm : Form
         _pinned.RemoveWhere(h => !WindowHelper.IsWindowVisible(h));
         var all = WindowHelper.GetTileableWindows(Handle, _settings);
         var rest = SortByTopLeft(all.Where(w => !_pinned.Contains(w)));
-        if (rest.Count == 0) { UpdateStatus($"已固定 {_pinned.Count} 个窗口，没有剩余窗口需要重排。"); return; }
+        if (rest.Count == 0) { UpdateStatus($"已固定 {_pinned.Count} 个窗口，没有剩余窗口需要重排"); return; }
 
         var area = _settings.ApplyMargins(WindowHelper.GetWorkArea(rest[0]));
         var pinnedRects = _pinned
@@ -350,11 +389,11 @@ public sealed class MainForm : Form
             .Select(h => { WindowHelper.TryGetRect(h, out var r); return r; })
             .ToList();
         var free = TileEngine.LargestFree(area, pinnedRects);
-        if (free.IsEmpty) { UpdateStatus("剩余空间不足，未重排其余窗口。"); return; }
+        if (free.IsEmpty) { UpdateStatus("剩余空间不足，未重排其余窗口"); return; }
 
         var rects = TileEngine.Tile(free, rest.Count, _settings.LayoutMode);
         for (int i = 0; i < rest.Count; i++) WindowHelper.MoveWindowTo(rest[i], rects[i]);
-        UpdateStatus($"已固定 1 个窗口，其余 {rest.Count} 个已在剩余空间按原顺序重排。");
+        UpdateStatus($"已固定 1 个窗口，其余 {rest.Count} 个已在剩余空间按原顺序重排");
     }
 
     private void ApplyStartup()
@@ -371,7 +410,7 @@ public sealed class MainForm : Form
 
     private void UpdateStatus(string s) { _status.Text = s; }
 
-    /// <summary>Soft shadows under the three cards, painted before the cards.</summary>
+    /// <summary>Soft shadows under the cards, painted before the cards.</summary>
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         base.OnPaintBackground(e);
