@@ -15,8 +15,11 @@ public sealed class MainForm : Form
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
     private const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2;
     private const int WM_HOTKEY = 0x0312;
+    private const int WM_NCLBUTTONDOWN = 0xA1, HTCAPTION = 2;
 
     private bool _reallyExit; // set only by tray "退出" -> OnFormClosing must not cancel
 
@@ -47,11 +50,22 @@ public sealed class MainForm : Form
     {
         Text = "WinLayoutAssistant";
         StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        // Borderless window: we draw our own min/max/close caption buttons
+        // top-right; the header area acts as the drag region.
+        FormBorderStyle = FormBorderStyle.None;
         MaximizeBox = false;
         BackColor = Theme.Background;
         Font = Theme.BodyFont;
         ForeColor = Theme.Text;
+
+        // custom window chrome, top-right
+        var capMin = new CaptionButton { Glyph = CaptionButton.CapGlyph.Min, Top = 0, Left = 480 - 138 };
+        var capMax = new CaptionButton { Glyph = CaptionButton.CapGlyph.Max, Top = 0, Left = 480 - 92 };
+        var capClose = new CaptionButton { Glyph = CaptionButton.CapGlyph.Close, Top = 0, Left = 480 - 46 };
+        capMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        capMax.Click += (_, _) => ToggleMaximize();
+        capClose.Click += (_, _) => Close(); // hides to tray, like the old X
+        Controls.AddRange(new Control[] { capMin, capMax, capClose });
 
         _modeBox.Items.AddRange(new object[] { "BSP 平铺 · 默认，占满全部空间", "网格平铺 (Grid)", "横向分列 (Columns)", "纵向分行 (Rows)" });
         _modeBox.SelectedIndex = (int)_settings.LayoutMode;
@@ -72,6 +86,11 @@ public sealed class MainForm : Form
         var title = new Label { Text = "WinLayoutAssistant", Top = 28, Left = 94, AutoSize = true, Font = Theme.TitleFont, ForeColor = Theme.Text, BackColor = Theme.Background };
         var sub = new Label { Text = "让每一个窗口，都恰到好处。", Top = 60, Left = 94, AutoSize = true, Font = Theme.SmallFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Background };
         var pill = new PillLabel { Text = "1.4", Top = 62, Left = 408 }; // bottom-right of the header, aligned with the tagline
+        // header controls also act as drag region for the borderless window
+        badge.MouseDown += DragOnHeader;
+        title.MouseDown += DragOnHeader;
+        sub.MouseDown += DragOnHeader;
+        pill.MouseDown += DragOnHeader;
 
         // --- section row: 桌面布局 + auto-layout state ---
         var section = new Label { Text = "桌面布局", Top = 102, Left = 24, AutoSize = true, Font = Theme.SectionFont, ForeColor = Theme.Text, BackColor = Theme.Background };
@@ -174,6 +193,9 @@ public sealed class MainForm : Form
             card2, card3, _statusDot, _status, exitLink, band
         });
         ClientSize = new Size(480, 1010);
+        // anchor only after the final size is set, otherwise the offset is
+        // computed against the default size and the buttons end up off-screen
+        capMin.Anchor = capMax.Anchor = capClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         ActiveControl = null; // no focus rectangle on the link button at startup
 
         _modeBox.SelectedIndexChanged += (_, _) => { _settings.LayoutMode = (TileEngine.Mode)_modeBox.SelectedIndex; _settings.Save(); };
@@ -424,6 +446,48 @@ public sealed class MainForm : Form
         base.OnPaintBackground(e);
         foreach (var card in _cards)
             Theme.DrawSoftShadow(e.Graphics, card.Bounds, card.Radius);
+    }
+
+    /// <summary>Drop shadow for the borderless window (DWM class style).</summary>
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            const int CS_DROPSHADOW = 0x20000;
+            var cp = base.CreateParams;
+            cp.ClassStyle |= CS_DROPSHADOW;
+            return cp;
+        }
+    }
+
+    /// <summary>Drag the borderless window by its header area.</summary>
+    private void DragOnHeader(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        ReleaseCapture();
+        SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        // header strip (above the hero button) doubles as the drag region
+        if (e.Y <= 100) DragOnHeader(this, e);
+    }
+
+    /// <summary>Maximize to the working area / restore. The layout is
+    /// absolutely positioned, so maximizing only enlarges the page.</summary>
+    private void ToggleMaximize()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+        else
+        {
+            MaximizedBounds = Screen.FromHandle(Handle).WorkingArea;
+            WindowState = FormWindowState.Maximized;
+        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

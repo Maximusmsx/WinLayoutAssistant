@@ -309,16 +309,23 @@ public sealed class ToggleSwitch : Control
 /// <summary>
 /// Margin input: white rounded box with a grey edge label (左/上/右/下)
 /// on the left and a borderless numeric field on the right.
+/// v1.4.1: plain TextBox instead of NumericUpDown – the hidden-spin-button
+/// hack rendered as black specks on dark-themed systems.
 /// </summary>
 public sealed class MarginBox : Panel
 {
-    private readonly NumericUpDown _num;
+    private const int MaxValue = 800;
+    private readonly TextBox _box;
     public event EventHandler? ValueChanged;
 
     public decimal Value
     {
-        get => _num.Value;
-        set => _num.Value = value;
+        get => int.TryParse(_box.Text, out var v) ? v : 0m;
+        set
+        {
+            int v = Math.Clamp((int)value, 0, MaxValue);
+            _box.Text = v.ToString();
+        }
     }
 
     public MarginBox(string edgeLabel)
@@ -338,29 +345,38 @@ public sealed class MarginBox : Panel
             Left = 10,
             Top = 10
         };
-        _num = new NumericUpDown
+        _box = new TextBox
         {
-            Minimum = 0,
-            Maximum = 800,
             BorderStyle = BorderStyle.None,
             BackColor = Theme.Card,
             Font = Theme.BodyFont,
             ForeColor = Theme.Text,
             Left = 36,
-            Top = 7,
-            Width = 48,
-            TextAlign = HorizontalAlignment.Right
+            Top = 8,
+            Width = 44,
+            TextAlign = HorizontalAlignment.Right,
+            Text = "0"
         };
-        // Hide the spin arrows and stretch the edit field, like the mockup.
-        try
+        _box.KeyPress += (_, e) =>
         {
-            _num.Controls[0].Visible = false; // up/down buttons
-            _num.Controls[1].Width = _num.Width - 4; // edit fills the box
-        }
-        catch { /* best-effort */ }
-        _num.ValueChanged += (s, e) => ValueChanged?.Invoke(s, e);
+            // digits and editing keys only – the box holds pixel margins
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar != '\b')
+                e.Handled = true;
+        };
+        _box.TextChanged += (s, e) =>
+        {
+            // live-update the setting while typing; empty text is ignored
+            if (int.TryParse(_box.Text, out _)) ValueChanged?.Invoke(s, e);
+        };
+        _box.Leave += (_, _) =>
+        {
+            // normalize on the way out: clamp to range, drop leading zeros
+            int v = int.TryParse(_box.Text, out var parsed) ? parsed : 0;
+            v = Math.Clamp(v, 0, MaxValue);
+            if (_box.Text != v.ToString()) _box.Text = v.ToString();
+        };
         Controls.Add(lab);
-        Controls.Add(_num);
+        Controls.Add(_box);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -544,6 +560,68 @@ public sealed class StatusDot : Control
         g.FillEllipse(halo, -2, -2, Width + 4, Height + 4);
         using var core = new SolidBrush(_dotColor);
         g.FillEllipse(core, 0, 0, Width - 1, Height - 1);
+    }
+}
+
+/// <summary>
+/// Window-chrome button for the borderless form: thin line glyphs
+/// (min / max / close), Win11-style hover background, close turns red.
+/// </summary>
+public sealed class CaptionButton : Control
+{
+    public enum CapGlyph { Min, Max, Close }
+    public CapGlyph Glyph { get; set; } = CapGlyph.Close;
+
+    private static readonly Color CloseHover = Color.FromArgb(0xE8, 0x11, 0x23);
+    private bool _hover;
+    private bool _pressed;
+
+    public CaptionButton()
+    {
+        Size = new Size(46, 32);
+        BackColor = Theme.Background;
+        SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw |
+                 ControlStyles.Selectable, true);
+        SetStyle(ControlStyles.Selectable, false);
+        TabStop = false;
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { _pressed = false; Invalidate(); base.OnMouseUp(e); }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+
+        if (_pressed || _hover)
+        {
+            Color bg = Glyph == CapGlyph.Close
+                ? (_pressed ? Color.FromArgb(0xC4, 0x0E, 0x1D) : CloseHover)
+                : (_pressed ? Color.FromArgb(0x1F, 0x1B, 0x1E, 0x28) : Color.FromArgb(0x12, 0x1B, 0x1E, 0x28));
+            using var brush = new SolidBrush(bg);
+            g.FillRectangle(brush, ClientRectangle);
+        }
+
+        Color fore = _hover && Glyph == CapGlyph.Close ? Color.White : Theme.Text;
+        using var pen = new Pen(fore, 1.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        int cx = Width / 2, cy = Height / 2;
+        switch (Glyph)
+        {
+            case CapGlyph.Min:
+                g.DrawLine(pen, cx - 5, cy, cx + 5, cy);
+                break;
+            case CapGlyph.Max:
+                g.DrawRectangle(pen, cx - 4, cy - 4, 9, 9);
+                break;
+            default:
+                g.DrawLine(pen, cx - 5, cy - 5, cx + 5, cy + 5);
+                g.DrawLine(pen, cx - 5, cy + 5, cx + 5, cy - 5);
+                break;
+        }
     }
 }
 
