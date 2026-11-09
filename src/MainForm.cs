@@ -32,6 +32,10 @@ public sealed class MainForm : Form
     private readonly RoundedButton _autoBtn = new() { Width = 396, Height = 44, ButtonKind = RoundedButton.Kind.Soft };
     private readonly Label _status = new() { AutoSize = true, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background };
     private readonly List<RoundedPanel> _cards = new();
+    private readonly NumericUpDown _marginL = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
+    private readonly NumericUpDown _marginT = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
+    private readonly NumericUpDown _marginR = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
+    private readonly NumericUpDown _marginB = new() { Minimum = 0, Maximum = 800, Width = 52, Font = Theme.BodyFont };
     private readonly ListBox _blacklistBox = new() { Width = 396, Height = 92, Font = Theme.BodyFont, BorderStyle = BorderStyle.None, BackColor = Theme.Well };
     private readonly TextBox _blacklistInput = new() { Width = 220, Font = Theme.BodyFont, PlaceholderText = "例如: WeChat.exe", BorderStyle = BorderStyle.FixedSingle };
 
@@ -51,6 +55,10 @@ public sealed class MainForm : Form
         _threshold.Value = _settings.SnapThreshold;
         _startup.Checked = _settings.RunAtStartup;
         _topmost.Checked = _settings.TopMost;
+        _marginL.Value = _settings.MarginLeft;
+        _marginT.Value = _settings.MarginTop;
+        _marginR.Value = _settings.MarginRight;
+        _marginB.Value = _settings.MarginBottom;
         TopMost = _settings.TopMost; // v1.2: stay on top while running, switchable below
         RefreshBlacklistBox();
         UpdateAutoButton();
@@ -79,7 +87,7 @@ public sealed class MainForm : Form
         card1.Controls.AddRange(new Control[] { tileBtn, _autoBtn, pinBtn, unpinBtn });
 
         // --- card 2: layout settings ---
-        var card2 = new RoundedPanel { Top = 302, Left = 24, Width = 412, Height = 132 };
+        var card2 = new RoundedPanel { Top = 302, Left = 24, Width = 412, Height = 176 };
         _cards.Add(card2);
         card2.Controls.Add(new SectionLabel("平铺方式") { Top = 16, Left = 16 });
         _modeBox.Top = 40; _modeBox.Left = 16;
@@ -87,11 +95,21 @@ public sealed class MainForm : Form
         _threshold.Top = 74; _threshold.Left = 100;
         card2.Controls.Add(new Label { Text = "px", Top = 78, Left = 188, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
         _startup.Top = 76; _startup.Left = 230;
-        _topmost.Top = 100; _topmost.Left = 16;
-        card2.Controls.AddRange(new Control[] { _modeBox, _threshold, _startup, _topmost });
+        // v1.4: per-edge screen margins excluded from tiling / reflow / snap
+        card2.Controls.Add(new Label { Text = "屏幕边距", Top = 110, Left = 16, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.Text, BackColor = Theme.Card });
+        card2.Controls.Add(new Label { Text = "左", Top = 110, Left = 90, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _marginL.Top = 106; _marginL.Left = 110;
+        card2.Controls.Add(new Label { Text = "上", Top = 110, Left = 168, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _marginT.Top = 106; _marginT.Left = 188;
+        card2.Controls.Add(new Label { Text = "右", Top = 110, Left = 246, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _marginR.Top = 106; _marginR.Left = 266;
+        card2.Controls.Add(new Label { Text = "下", Top = 110, Left = 324, AutoSize = true, Font = Theme.BodyFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Card });
+        _marginB.Top = 106; _marginB.Left = 344;
+        _topmost.Top = 144; _topmost.Left = 16;
+        card2.Controls.AddRange(new Control[] { _modeBox, _threshold, _startup, _topmost, _marginL, _marginT, _marginR, _marginB });
 
         // --- card 3: blacklist ---
-        var card3 = new RoundedPanel { Top = 450, Left = 24, Width = 412, Height = 196 };
+        var card3 = new RoundedPanel { Top = 494, Left = 24, Width = 412, Height = 196 };
         _cards.Add(card3);
         card3.Controls.Add(new SectionLabel("黑名单 · 按 exe 名，不参与排布") { Top = 14, Left = 16 });
         _blacklistBox.Top = 40; _blacklistBox.Left = 16;
@@ -105,22 +123,26 @@ public sealed class MainForm : Form
         card3.Controls.AddRange(new Control[] { _blacklistBox, _blacklistInput, blAddBtn, blDelBtn, blActiveBtn });
 
         // --- footer: status + exit ---
-        var dot = new GlowDot { Top = 662, Left = 24, Width = 12, Height = 12 };
-        _status.Top = 660; _status.Left = 42; _status.Width = 380;
+        var dot = new GlowDot { Top = 706, Left = 24, Width = 12, Height = 12 };
+        _status.Top = 704; _status.Left = 42; _status.Width = 380;
         var hint = new Label
         {
             Text = "拖动窗口靠近 1/2、1/3 … 1/9 的线会磁吸，松手后该窗口固定，其余窗口在剩余空间重排。\r\n点 × 最小化到托盘；托盘右键 → 退出 才是真正退出。一键平铺按窗口左上角从左到右、从上到下排序。",
-            Top = 684, Left = 24, Width = 412, Height = 36, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background
+            Top = 728, Left = 24, Width = 412, Height = 36, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background
         };
-        var exitBtn = new RoundedButton { Text = "退出程序", Width = 412, Height = 36, Top = 724, Left = 24, ButtonKind = RoundedButton.Kind.DangerSoft };
+        var exitBtn = new RoundedButton { Text = "退出程序", Width = 412, Height = 36, Top = 768, Left = 24, ButtonKind = RoundedButton.Kind.DangerSoft };
         exitBtn.Click += (_, _) => ExitApp();
         Controls.AddRange(new Control[] { header, accentBar, card1, card2, card3, dot, _status, hint, exitBtn });
-        ClientSize = new Size(460, 772);
+        ClientSize = new Size(460, 816);
 
         _modeBox.SelectedIndexChanged += (_, _) => { _settings.LayoutMode = (TileEngine.Mode)_modeBox.SelectedIndex; _settings.Save(); };
         _threshold.ValueChanged += (_, _) => { _settings.SnapThreshold = (int)_threshold.Value; _settings.Save(); };
         _startup.CheckedChanged += (_, _) => { _settings.RunAtStartup = _startup.Checked; _settings.Save(); ApplyStartup(); };
         _topmost.CheckedChanged += (_, _) => { _settings.TopMost = _topmost.Checked; TopMost = _topmost.Checked; _settings.Save(); };
+        _marginL.ValueChanged += (_, _) => { _settings.MarginLeft = (int)_marginL.Value; _settings.Save(); };
+        _marginT.ValueChanged += (_, _) => { _settings.MarginTop = (int)_marginT.Value; _settings.Save(); };
+        _marginR.ValueChanged += (_, _) => { _settings.MarginRight = (int)_marginR.Value; _settings.Save(); };
+        _marginB.ValueChanged += (_, _) => { _settings.MarginBottom = (int)_marginB.Value; _settings.Save(); };
 
         // v1.4: use the packaged app icon (Assets/AppIcon.ico -> exe icon)
         // for both the title bar and the tray; fall back to the stock icon
@@ -287,7 +309,7 @@ public sealed class MainForm : Form
         var wins = WindowHelper.GetTileableWindows(Handle, _settings);
         if (wins.Count == 0) { UpdateStatus("没有可平铺的窗口（可能都被黑名单排除了）。"); return; }
         var ordered = SortByTopLeft(wins);
-        foreach (var group in ordered.GroupBy(w => WindowHelper.GetWorkArea(w)))
+        foreach (var group in ordered.GroupBy(w => _settings.ApplyMargins(WindowHelper.GetWorkArea(w))))
         {
             var rects = TileEngine.Tile(group.Key, group.Count(), _settings.LayoutMode);
             int i = 0;
@@ -322,7 +344,7 @@ public sealed class MainForm : Form
         var rest = SortByTopLeft(all.Where(w => !_pinned.Contains(w)));
         if (rest.Count == 0) { UpdateStatus($"已固定 {_pinned.Count} 个窗口，没有剩余窗口需要重排。"); return; }
 
-        var area = WindowHelper.GetWorkArea(rest[0]);
+        var area = _settings.ApplyMargins(WindowHelper.GetWorkArea(rest[0]));
         var pinnedRects = _pinned
             .Where(h => WindowHelper.TryGetRect(h, out _))
             .Select(h => { WindowHelper.TryGetRect(h, out var r); return r; })

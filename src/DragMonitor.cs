@@ -60,7 +60,7 @@ public sealed class DragMonitor : IDisposable
         if (eventType == EVENT_SYSTEM_MOVESIZESTART)
         {
             _dragHwnd = hwnd;
-            _dragArea = WindowHelper.GetWorkArea(hwnd);
+            _dragArea = _settings.ApplyMargins(WindowHelper.GetWorkArea(hwnd));
             if (!WindowHelper.TryGetRect(hwnd, out _dragStartRect)) _dragStartRect = Rectangle.Empty;
             _dragWasResize = false;
             _poll.Start();

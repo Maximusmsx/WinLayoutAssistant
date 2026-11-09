@@ -12,6 +12,23 @@ public sealed class AppSettings
     public string TileHotkey { get; set; } = "Ctrl+Alt+L"; // one-click tile
     public string UnpinHotkey { get; set; } = "Ctrl+Alt+U"; // unpin all
 
+    // v1.4: screen-edge margins (px) excluded from every layout area.
+    // CSS-style: MarginRight cuts the RIGHT edge, MarginLeft the left, etc.
+    public int MarginLeft { get; set; } = 0;
+    public int MarginTop { get; set; } = 0;
+    public int MarginRight { get; set; } = 0;
+    public int MarginBottom { get; set; } = 0;
+
+    /// <summary>Shrink a work area by the configured margins. Applied at the
+    /// single choke point where a work area enters the layout pipeline, so
+    /// tiling, reflow and 1/n drag-snap all respect the same bounds.</summary>
+    public Rectangle ApplyMargins(Rectangle area)
+    {
+        int w = Math.Max(0, area.Width - MarginLeft - MarginRight);
+        int h = Math.Max(0, area.Height - MarginTop - MarginBottom);
+        return new Rectangle(area.X + MarginLeft, area.Y + MarginTop, w, h);
+    }
+
     /// <summary>Exe names (case-insensitive, one per line in the UI) that are
     /// never tiled / never reflowed. Matched against the process exe file name,
     /// e.g. "TextInputHost.exe".</summary>
