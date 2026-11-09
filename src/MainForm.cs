@@ -33,7 +33,7 @@ public sealed class MainForm : Form
     private readonly ToggleSwitch _startupSw = new();
     private readonly ToggleSwitch _topmostSw = new();
     private readonly RoundedButton _autoBtn = new() { ButtonKind = RoundedButton.Kind.Ghost, Font = Theme.SmallFont };
-    private readonly Label _status = new() { AutoSize = false, Width = 370, Height = 18, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background };
+    private readonly Label _status = new() { AutoSize = false, Width = 316, Height = 18, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background };
     private readonly Label _autoStatus = new() { AutoSize = false, Width = 116, Height = 18, ForeColor = Theme.TextSecondary, Font = Theme.SmallFont, BackColor = Theme.Background, TextAlign = ContentAlignment.TopRight };
     private readonly StatusDot _autoDot = new();
     private readonly StatusDot _statusDot = new();
@@ -58,14 +58,12 @@ public sealed class MainForm : Form
         Font = Theme.BodyFont;
         ForeColor = Theme.Text;
 
-        // custom window chrome, top-right
-        var capMin = new CaptionButton { Glyph = CaptionButton.CapGlyph.Min, Top = 0, Left = 480 - 138 };
-        var capMax = new CaptionButton { Glyph = CaptionButton.CapGlyph.Max, Top = 0, Left = 480 - 92 };
+        // custom window chrome, top-right (min + close only, no maximize)
+        var capMin = new CaptionButton { Glyph = CaptionButton.CapGlyph.Min, Top = 0, Left = 480 - 92 };
         var capClose = new CaptionButton { Glyph = CaptionButton.CapGlyph.Close, Top = 0, Left = 480 - 46 };
         capMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
-        capMax.Click += (_, _) => ToggleMaximize();
         capClose.Click += (_, _) => Close(); // hides to tray, like the old X
-        Controls.AddRange(new Control[] { capMin, capMax, capClose });
+        Controls.AddRange(new Control[] { capMin, capClose });
 
         _modeBox.Items.AddRange(new object[] { "BSP 平铺 · 默认，占满全部空间", "网格平铺 (Grid)", "横向分列 (Columns)", "纵向分行 (Rows)" });
         _modeBox.SelectedIndex = (int)_settings.LayoutMode;
@@ -170,11 +168,13 @@ public sealed class MainForm : Form
         // --- status row + footer band ---
         _statusDot.Top = 938; _statusDot.Left = 24;
         _status.Top = 934; _status.Left = 40;
-        var exitLink = new Label
+        // prominent soft-red chip so the real exit is easy to find
+        var exitLink = new RoundedButton
         {
-            Text = "退出程序", Top = 934, Left = 418, AutoSize = true,
-            Font = Theme.SmallFont, ForeColor = Theme.TextSecondary,
-            BackColor = Theme.Background, Cursor = Cursors.Hand
+            Text = "退出程序",
+            ButtonKind = RoundedButton.Kind.DangerSoft,
+            Font = Theme.SmallFont,
+            Top = 926, Left = 366, Width = 90, Height = 30
         };
         exitLink.Click += (_, _) => ExitApp();
         var band = new Panel { Top = 964, Left = 0, Width = 480, Height = 46, BackColor = Theme.Well };
@@ -195,7 +195,7 @@ public sealed class MainForm : Form
         ClientSize = new Size(480, 1010);
         // anchor only after the final size is set, otherwise the offset is
         // computed against the default size and the buttons end up off-screen
-        capMin.Anchor = capMax.Anchor = capClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        capMin.Anchor = capClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         ActiveControl = null; // no focus rectangle on the link button at startup
 
         _modeBox.SelectedIndexChanged += (_, _) => { _settings.LayoutMode = (TileEngine.Mode)_modeBox.SelectedIndex; _settings.Save(); };
@@ -473,21 +473,6 @@ public sealed class MainForm : Form
         base.OnMouseDown(e);
         // header strip (above the hero button) doubles as the drag region
         if (e.Y <= 100) DragOnHeader(this, e);
-    }
-
-    /// <summary>Maximize to the working area / restore. The layout is
-    /// absolutely positioned, so maximizing only enlarges the page.</summary>
-    private void ToggleMaximize()
-    {
-        if (WindowState == FormWindowState.Maximized)
-        {
-            WindowState = FormWindowState.Normal;
-        }
-        else
-        {
-            MaximizedBounds = Screen.FromHandle(Handle).WorkingArea;
-            WindowState = FormWindowState.Maximized;
-        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

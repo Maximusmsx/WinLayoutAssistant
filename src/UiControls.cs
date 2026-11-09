@@ -25,6 +25,9 @@ public static class Theme
     public static readonly Color Green = Color.FromArgb(0x22, 0xC5, 0x5E);
     public static readonly Color Amber = Color.FromArgb(0xF5, 0x9E, 0x0B);
     public static readonly Color DangerText = Color.FromArgb(0xDC, 0x26, 0x26);
+    public static readonly Color DangerSoft = Color.FromArgb(0xFE, 0xE2, 0xE2);
+    public static readonly Color DangerSoftHover = Color.FromArgb(0xFC, 0xD3, 0xD3);
+    public static readonly Color DangerSoftPressed = Color.FromArgb(0xFA, 0xC0, 0xC0);
     public static readonly Color ToggleOff = Color.FromArgb(0xD5, 0xD8, 0xE0);
     public static readonly Color GhostHover = Color.FromArgb(0xF3, 0xF4, 0xF7);
     public static readonly Color GhostPressed = Color.FromArgb(0xEA, 0xEC, 0xF0);
@@ -110,7 +113,7 @@ public sealed class RoundedPanel : Panel
 /// </summary>
 public sealed class RoundedButton : Control
 {
-    public enum Kind { Primary, Soft, Ghost, Link }
+    public enum Kind { Primary, Soft, Ghost, Link, DangerSoft }
     public enum Glyph { None, Grid, Play, Pause, Pin, Unpin }
 
     public Kind ButtonKind { get; set; } = Kind.Primary;
@@ -182,6 +185,9 @@ public sealed class RoundedButton : Control
             case Kind.Link:
                 fill = _pressed ? Theme.GhostPressed : _hover ? Theme.GhostHover : Theme.Card;
                 fore = _hover ? Theme.AccentHover : Theme.Accent; break;
+            case Kind.DangerSoft:
+                fill = _pressed ? Theme.DangerSoftPressed : _hover ? Theme.DangerSoftHover : Theme.DangerSoft;
+                fore = Theme.DangerText; break;
             default:
                 fill = _pressed ? Theme.GhostPressed : _hover ? Theme.GhostHover : Theme.Card;
                 fore = Theme.Text; break;
