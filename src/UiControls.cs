@@ -102,9 +102,13 @@ public sealed class RoundedPanel : Panel
 
 /// <summary>
 /// Rounded button with hover/pressed states, optional left glyph and
-/// right-aligned accessory text (hero style).
+/// right-aligned accessory text (hero style). Inherits Control (not Button)
+/// on purpose: the native Win32 BUTTON window paints a themed 1px dark edge
+/// around custom Regions that no managed setting can fully suppress.
+/// Mouse click still raises Click; keyboard activation is unnecessary here
+/// (all actions have global hotkeys).
 /// </summary>
-public sealed class RoundedButton : Button
+public sealed class RoundedButton : Control
 {
     public enum Kind { Primary, Soft, Ghost, Link }
     public enum Glyph { None, Grid, Play, Pause, Pin, Unpin }
@@ -121,12 +125,13 @@ public sealed class RoundedButton : Button
 
     public RoundedButton()
     {
-        FlatStyle = FlatStyle.Flat;
-        FlatAppearance.BorderSize = 0;
         Font = Theme.BodyFont;
         Cursor = Cursors.Hand;
+        TabStop = false;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
-                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+                 ControlStyles.UserPaint | ControlStyles.ResizeRedraw |
+                 ControlStyles.Selectable, true);
+        SetStyle(ControlStyles.Selectable, false);
     }
 
     /// <summary>
