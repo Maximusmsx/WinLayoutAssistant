@@ -129,6 +129,31 @@ public sealed class RoundedButton : Button
                  ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
     }
 
+    /// <summary>
+    /// Corners outside the rounded path are painted with BackColor; inheriting
+    /// the parent's colour keeps them invisible even on dark-themed systems
+    /// where the default Control colour renders almost black.
+    /// </summary>
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent != null) BackColor = Parent.BackColor;
+    }
+
+    /// <summary>
+    /// Clip the control to the rounded shape itself, so nothing the button (or
+    /// a quirky theme) paints can leak into the corners – the parent's
+    /// background shows through instead.
+    /// </summary>
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (Width <= 0 || Height <= 0) return;
+        using var path = Theme.RoundedRect(new Rectangle(0, 0, Width, Height), Radius);
+        Region?.Dispose();
+        Region = new Region(path);
+    }
+
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
     protected override void OnMouseLeave(EventArgs e) { _hover = false; _pressed = false; Invalidate(); base.OnMouseLeave(e); }
     protected override void OnMouseDown(MouseEventArgs e) { _pressed = true; Invalidate(); base.OnMouseDown(e); }

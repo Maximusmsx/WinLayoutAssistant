@@ -136,8 +136,16 @@ public sealed class MainForm : Form
         _blacklistInput.Top = 252; _blacklistInput.Left = 20;
         var blAddBtn = new RoundedButton { Text = "+ 添加", ButtonKind = RoundedButton.Kind.Soft, Top = 248, Left = 316, Width = 96, Height = 34 };
         blAddBtn.Click += (_, _) => AddBlacklist(_blacklistInput.Text);
-        var blActiveBtn = new RoundedButton { Text = "+ 将当前活动窗口加入排除列表", ButtonKind = RoundedButton.Kind.Link, Font = Theme.SmallFont, Top = 294, Left = 20, Width = 392, Height = 32 };
+        var blActiveBtn = new Label
+        {
+            Text = "+ 将当前活动窗口加入排除列表",
+            Font = Theme.SmallFont, ForeColor = Theme.Accent, BackColor = Theme.Card,
+            AutoSize = false, Top = 294, Left = 20, Width = 392, Height = 32,
+            TextAlign = ContentAlignment.MiddleCenter, Cursor = Cursors.Hand
+        };
         blActiveBtn.Click += (_, _) => AddActiveWindowToBlacklist();
+        blActiveBtn.MouseEnter += (_, _) => blActiveBtn.ForeColor = Theme.AccentHover;
+        blActiveBtn.MouseLeave += (_, _) => blActiveBtn.ForeColor = Theme.Accent;
         card3.Controls.AddRange(new Control[] { _blacklistCount, _blacklistView, _blacklistInput, blAddBtn, blActiveBtn });
 
         // --- status row + footer band ---
