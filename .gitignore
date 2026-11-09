@@ -1,0 +1,10 @@
+# Build outputs
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+# OS
+Thumbs.db
+Desktop.ini
