@@ -71,7 +71,7 @@ public sealed class MainForm : Form
         var badge = new BadgeView { Top = 26, Left = 24 };
         var title = new Label { Text = "WinLayoutAssistant", Top = 28, Left = 94, AutoSize = true, Font = Theme.TitleFont, ForeColor = Theme.Text, BackColor = Theme.Background };
         var sub = new Label { Text = "让每一个窗口，都恰到好处。", Top = 60, Left = 94, AutoSize = true, Font = Theme.SmallFont, ForeColor = Theme.TextSecondary, BackColor = Theme.Background };
-        var pill = new PillLabel { Text = "1.4", Top = 32, Left = 408 };
+        var pill = new PillLabel { Text = "1.4", Top = 62, Left = 408 }; // bottom-right of the header, aligned with the tagline
 
         // --- section row: 桌面布局 + auto-layout state ---
         var section = new Label { Text = "桌面布局", Top = 102, Left = 24, AutoSize = true, Font = Theme.SectionFont, ForeColor = Theme.Text, BackColor = Theme.Background };
